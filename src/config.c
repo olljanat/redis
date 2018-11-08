@@ -1903,6 +1903,7 @@ void rewriteConfigDirOption(struct rewriteConfigState *state) {
 /* Rewrite the slaveof option. */
 void rewriteConfigSlaveofOption(struct rewriteConfigState *state, char *option) {
     sds line;
+    static char hostname[65] = "";
 
     /* If this is a master, we want all the slaveof config options
      * in the file to be removed. Note that if this is a cluster instance
@@ -1911,8 +1912,9 @@ void rewriteConfigSlaveofOption(struct rewriteConfigState *state, char *option) 
         rewriteConfigMarkAsProcessed(state,option);
         return;
     }
+    anetResolveHost(server.masterhost, hostname);
     line = sdscatprintf(sdsempty(),"%s %s %d", option,
-        server.masterhost, server.masterport);
+        hostname, server.masterport);
     rewriteConfigRewriteLine(state,option,line,1);
 }
 

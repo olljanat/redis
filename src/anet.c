@@ -235,6 +235,18 @@ int anetResolveIP(char *err, char *host, char *ipbuf, size_t ipbuf_len) {
     return anetGenericResolve(err,host,ipbuf,ipbuf_len,ANET_IP_ONLY);
 }
 
+void anetResolveHost(char *ip, char *ipbuf) {
+	struct sockaddr_in sin;
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_addr.s_addr	= inet_addr(ip);
+	sin.sin_port = 0;
+
+    /* If the last parameter (flags) is 0 and if getnameinfo fails,
+     * then the IP is written into ipbuf instead of the hostname */
+	getnameinfo( (struct sockaddr *)&sin, sizeof(sin), ipbuf, 64, NULL, 0, 0);
+}
+
 static int anetSetReuseAddr(char *err, int fd) {
     int yes = 1;
     /* Make sure connection-intensive things like the redis benchmark

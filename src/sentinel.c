@@ -1757,6 +1757,7 @@ void rewriteConfigSentinelOption(struct rewriteConfigState *state) {
     dictIterator *di, *di2;
     dictEntry *de;
     sds line;
+    static char master_hostname[65] = "";
 
     /* sentinel unique ID. */
     line = sdscatprintf(sdsempty(), "sentinel myid %s", sentinel.myid);
@@ -1777,8 +1778,9 @@ void rewriteConfigSentinelOption(struct rewriteConfigState *state) {
         /* sentinel monitor */
         master = dictGetVal(de);
         master_addr = sentinelGetCurrentMasterAddress(master);
+        anetResolveHost(master_addr->ip, master_hostname);
         line = sdscatprintf(sdsempty(),"sentinel monitor %s %s %d %d",
-            master->name, master_addr->ip, master_addr->port,
+            master->name, master_hostname, master_addr->port,
             master->quorum);
         rewriteConfigRewriteLine(state,"sentinel",line,1);
 
