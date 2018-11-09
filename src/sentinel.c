@@ -84,6 +84,7 @@ typedef struct sentinelAddr {
 #define SENTINEL_MAX_PENDING_COMMANDS 100
 #define SENTINEL_ELECTION_TIMEOUT 10000
 #define SENTINEL_MAX_DESYNC 1000
+#define SENTINEL_RESOLVE_HOSTNAMES 0
 #define SENTINEL_DEFAULT_DENY_SCRIPTS_RECONFIG 1
 
 /* Failover machine different states. */
@@ -245,6 +246,7 @@ struct sentinelState {
                            not NULL. */
     int announce_port;  /* Port that is gossiped to other sentinels if
                            non zero. */
+    int resolve_hostnames; /* Resolve hostnames befoce storing them to configs */
     unsigned long simfailure_flags; /* Failures simulation. */
     int deny_scripts_reconfig; /* Allow SENTINEL SET ... to change script
                                   paths at runtime? */
@@ -488,6 +490,7 @@ void initSentinel(void) {
     sentinel.scripts_queue = listCreate();
     sentinel.announce_ip = NULL;
     sentinel.announce_port = 0;
+    sentinel.resolve_hostnames = SENTINEL_RESOLVE_HOSTNAMES;
     sentinel.simfailure_flags = SENTINEL_SIMFAILURE_NONE;
     sentinel.deny_scripts_reconfig = SENTINEL_DEFAULT_DENY_SCRIPTS_RECONFIG;
     memset(sentinel.myid,0,sizeof(sentinel.myid));
@@ -1736,6 +1739,9 @@ char *sentinelHandleConfiguration(char **argv, int argc) {
     } else if (!strcasecmp(argv[0],"announce-port") && argc == 2) {
         /* announce-port <port> */
         sentinel.announce_port = atoi(argv[1]);
+    } else if (!strcasecmp(argv[0],"resolve-hostnames") && argc == 2) {
+        /* resolve-hostnames <yes|no> */
+        sentinel.resolve_hostnames = yesnotoi(argv[1]);
     } else if (!strcasecmp(argv[0],"deny-scripts-reconfig") && argc == 2) {
         /* deny-scripts-reconfig <yes|no> */
         if ((sentinel.deny_scripts_reconfig = yesnotoi(argv[1])) == -1) {
@@ -1769,6 +1775,12 @@ void rewriteConfigSentinelOption(struct rewriteConfigState *state) {
     rewriteConfigRewriteLine(state,"sentinel",line,
         sentinel.deny_scripts_reconfig != SENTINEL_DEFAULT_DENY_SCRIPTS_RECONFIG);
 
+    /* sentinel resolve-hostnames. */
+    line = sdscatprintf(sdsempty(), "sentinel resolve-hostnames %s",
+        sentinel.resolve_hostnames ? "yes" : "no");
+    rewriteConfigRewriteLine(state,"sentinel",line,
+        sentinel.resolve_hostnames != SENTINEL_RESOLVE_HOSTNAMES);
+
     /* For every master emit a "sentinel monitor" config entry. */
     di = dictGetIterator(sentinel.masters);
     while((de = dictNext(di)) != NULL) {
@@ -1778,10 +1790,17 @@ void rewriteConfigSentinelOption(struct rewriteConfigState *state) {
         /* sentinel monitor */
         master = dictGetVal(de);
         master_addr = sentinelGetCurrentMasterAddress(master);
-        anetResolveHost(master_addr->ip, master_hostname);
-        line = sdscatprintf(sdsempty(),"sentinel monitor %s %s %d %d",
-            master->name, master_hostname, master_addr->port,
-            master->quorum);
+
+        if (sentinel.resolve_hostnames) {
+            anetResolveHost(master_addr->ip, master_hostname);
+            line = sdscatprintf(sdsempty(),"sentinel monitor %s %s %d %d",
+                master->name, master_hostname, master_addr->port,
+                master->quorum);
+        } else {
+            line = sdscatprintf(sdsempty(),"sentinel monitor %s %s %d %d",
+                master->name, master_addr->ip, master_addr->port,
+                master->quorum);
+        }
         rewriteConfigRewriteLine(state,"sentinel",line,1);
 
         /* sentinel down-after-milliseconds */
@@ -1926,7 +1945,7 @@ void sentinelFlushConfig(void) {
     int rewrite_status;
 
     server.hz = CONFIG_DEFAULT_HZ;
-    rewrite_status = rewriteConfig(server.configfile);
+    rewrite_status = rewriteConfig(server.configfile,sentinel.resolve_hostnames);
     server.hz = saved_hz;
 
     if (rewrite_status == -1) goto werr;

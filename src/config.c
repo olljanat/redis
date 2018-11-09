@@ -1901,9 +1901,8 @@ void rewriteConfigDirOption(struct rewriteConfigState *state) {
 }
 
 /* Rewrite the slaveof option. */
-void rewriteConfigSlaveofOption(struct rewriteConfigState *state, char *option) {
+void rewriteConfigSlaveofOption(struct rewriteConfigState *state, char *option, bool resolveHostnames) {
     sds line;
-    static char hostname[65] = "";
 
     /* If this is a master, we want all the slaveof config options
      * in the file to be removed. Note that if this is a cluster instance
@@ -1912,9 +1911,15 @@ void rewriteConfigSlaveofOption(struct rewriteConfigState *state, char *option) 
         rewriteConfigMarkAsProcessed(state,option);
         return;
     }
-    anetResolveHost(server.masterhost, hostname);
-    line = sdscatprintf(sdsempty(),"%s %s %d", option,
-        hostname, server.masterport);
+    if (resolveHostnames) {
+        static char hostname[65] = "";
+        anetResolveHost(server.masterhost, hostname);
+        line = sdscatprintf(sdsempty(),"%s %s %d", option,
+            hostname, server.masterport);
+    } else {
+        line = sdscatprintf(sdsempty(),"%s %s %d", option,
+            server.masterhost, server.masterport);
+    }
     rewriteConfigRewriteLine(state,option,line,1);
 }
 
@@ -2111,7 +2116,7 @@ cleanup:
  * explicitly included in the old configuration file, are not rewritten.
  *
  * On error -1 is returned and errno is set accordingly, otherwise 0. */
-int rewriteConfig(char *path) {
+int rewriteConfig(char *path, int resolveHostnames) {
     struct rewriteConfigState *state;
     sds newcontent;
     int retval;
@@ -2146,7 +2151,7 @@ int rewriteConfig(char *path) {
     rewriteConfigYesNoOption(state,"rdbchecksum",server.rdb_checksum,CONFIG_DEFAULT_RDB_CHECKSUM);
     rewriteConfigStringOption(state,"dbfilename",server.rdb_filename,CONFIG_DEFAULT_RDB_FILENAME);
     rewriteConfigDirOption(state);
-    rewriteConfigSlaveofOption(state,"replicaof");
+    rewriteConfigSlaveofOption(state,"replicaof",resolveHostnames);
     rewriteConfigStringOption(state,"replica-announce-ip",server.slave_announce_ip,CONFIG_DEFAULT_SLAVE_ANNOUNCE_IP);
     rewriteConfigStringOption(state,"masterauth",server.masterauth,NULL);
     rewriteConfigStringOption(state,"cluster-announce-ip",server.cluster_announce_ip,NULL);
@@ -2273,7 +2278,7 @@ NULL
             addReplyError(c,"The server is running without a config file");
             return;
         }
-        if (rewriteConfig(server.configfile) == -1) {
+        if (rewriteConfig(server.configfile,0) == -1) {
             serverLog(LL_WARNING,"CONFIG REWRITE failed: %s", strerror(errno));
             addReplyErrorFormat(c,"Rewriting config file: %s", strerror(errno));
         } else {
