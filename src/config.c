@@ -1912,7 +1912,7 @@ void rewriteConfigSlaveofOption(struct rewriteConfigState *state, char *option, 
         return;
     }
     if (resolveHostnames) {
-        static char hostname[65] = "";
+        static char hostname[255] = "";
         anetResolveHost(server.masterhost, hostname);
         line = sdscatprintf(sdsempty(),"%s %s %d", option,
             hostname, server.masterport);

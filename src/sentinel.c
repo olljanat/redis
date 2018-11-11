@@ -1763,7 +1763,6 @@ void rewriteConfigSentinelOption(struct rewriteConfigState *state) {
     dictIterator *di, *di2;
     dictEntry *de;
     sds line;
-    static char master_hostname[65] = "";
 
     /* sentinel unique ID. */
     line = sdscatprintf(sdsempty(), "sentinel myid %s", sentinel.myid);
@@ -1786,21 +1785,19 @@ void rewriteConfigSentinelOption(struct rewriteConfigState *state) {
     while((de = dictNext(di)) != NULL) {
         sentinelRedisInstance *master, *ri;
         sentinelAddr *master_addr;
+        char master_hostname[255] = "";
 
         /* sentinel monitor */
         master = dictGetVal(de);
         master_addr = sentinelGetCurrentMasterAddress(master);
+        strcpy (master_hostname, master_addr->ip);
 
         if (sentinel.resolve_hostnames) {
             anetResolveHost(master_addr->ip, master_hostname);
-            line = sdscatprintf(sdsempty(),"sentinel monitor %s %s %d %d",
-                master->name, master_hostname, master_addr->port,
-                master->quorum);
-        } else {
-            line = sdscatprintf(sdsempty(),"sentinel monitor %s %s %d %d",
-                master->name, master_addr->ip, master_addr->port,
-                master->quorum);
         }
+        line = sdscatprintf(sdsempty(),"sentinel monitor %s %s %d %d",
+            master->name, master_hostname, master_addr->port,
+            master->quorum);
         rewriteConfigRewriteLine(state,"sentinel",line,1);
 
         /* sentinel down-after-milliseconds */
@@ -1878,9 +1875,14 @@ void rewriteConfigSentinelOption(struct rewriteConfigState *state) {
              * we use the old master address instead. */
             if (sentinelAddrIsEqual(slave_addr,master_addr))
                 slave_addr = master->addr;
+            char slave_hostname[255] = "";
+            strcpy (slave_hostname, slave_addr->ip);
+            if (sentinel.resolve_hostnames) {
+                anetResolveHost(slave_addr->ip, slave_hostname);
+            }
             line = sdscatprintf(sdsempty(),
                 "sentinel known-replica %s %s %d",
-                master->name, slave_addr->ip, slave_addr->port);
+                master->name, slave_hostname, slave_addr->port);
             rewriteConfigRewriteLine(state,"sentinel",line,1);
         }
         dictReleaseIterator(di2);
@@ -1890,9 +1892,15 @@ void rewriteConfigSentinelOption(struct rewriteConfigState *state) {
         while((de = dictNext(di2)) != NULL) {
             ri = dictGetVal(de);
             if (ri->runid == NULL) continue;
+
+            char known_hostname[255] = "";
+            strcpy (known_hostname, ri->addr->ip);
+            if (sentinel.resolve_hostnames) {
+                anetResolveHost(ri->addr->ip, known_hostname);
+            }
             line = sdscatprintf(sdsempty(),
                 "sentinel known-sentinel %s %s %d %s",
-                master->name, ri->addr->ip, ri->addr->port, ri->runid);
+                master->name, known_hostname, ri->addr->port, ri->runid);
             rewriteConfigRewriteLine(state,"sentinel",line,1);
         }
         dictReleaseIterator(di2);
