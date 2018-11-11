@@ -1876,14 +1876,20 @@ void rewriteConfigSentinelOption(struct rewriteConfigState *state) {
             if (sentinelAddrIsEqual(slave_addr,master_addr))
                 slave_addr = master->addr;
             char slave_hostname[255] = "";
+            int invalid_slave = 0;
             strcpy (slave_hostname, slave_addr->ip);
             if (sentinel.resolve_hostnames) {
-                anetResolveHost(slave_addr->ip, slave_hostname);
+                invalid_slave = anetResolveHost(slave_addr->ip, slave_hostname);
+
+                // FixMe
+                invalid_slave = 0;
             }
             line = sdscatprintf(sdsempty(),
                 "sentinel known-replica %s %s %d",
                 master->name, slave_hostname, slave_addr->port);
-            rewriteConfigRewriteLine(state,"sentinel",line,1);
+            if (invalid_slave == 0) {
+                rewriteConfigRewriteLine(state,"sentinel",line,1);
+            }
         }
         dictReleaseIterator(di2);
 
